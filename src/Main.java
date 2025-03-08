@@ -1,4 +1,5 @@
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.HashMap;
@@ -7,6 +8,7 @@ import java.util.Scanner;
 
 public class Main {
     private static final Map<String, String> UNIX_TO_WINDOWS_COMMANDS = new HashMap<>();
+    private static File currentDirectory = new File(System.getProperty("user.dir"));
 
     static {
         UNIX_TO_WINDOWS_COMMANDS.put("ls", "dir");
@@ -32,7 +34,7 @@ public class Main {
                     continue;
                 }
 
-                if (command.equals("exit") ) {
+                if (command.equals("exit")) {
                     System.out.println("Exiting...");
                     break;
                 }
@@ -46,15 +48,22 @@ public class Main {
         String[] commandParts = command.split("\\s+", 2);
         String originalCommandName = commandParts[0];
         String arguments = commandParts.length > 1 ? commandParts[1] : "";
+        if (originalCommandName.equals("cd")) {
+            handleCdCommand(arguments);
+            return;
+        }
+
         String translatedCommand = originalCommandName;
         String translatedArguments = arguments;
 
         if (isWindows) {
             if (UNIX_TO_WINDOWS_COMMANDS.containsKey(originalCommandName)) {
                 translatedCommand = UNIX_TO_WINDOWS_COMMANDS.get(originalCommandName);
+                // Translate arguments for specific commands
                 if (originalCommandName.equals("ls")) {
                     translatedArguments = translateLsArguments(arguments);
                 }
+                // Add other command argument translations here as needed
             } else {
                 System.out.println("No such file or directory (os error 2)");
                 return;
@@ -64,16 +73,15 @@ public class Main {
 
         Process process;
         try {
+            ProcessBuilder processBuilder = new ProcessBuilder();
             if (isWindows) {
-                process = Runtime.getRuntime().exec("cmd.exe /c " + command);
+                processBuilder.command("cmd.exe", "/c", command);
             } else {
-                try {
-                    process = Runtime.getRuntime().exec(new String[]{"/bin/sh", "-c", command});
-                } catch (IOException e) {
-                    System.out.println("No such file or directory (os error 2)");
-                    return;
-                }
+                processBuilder.command("/bin/sh", "-c", command);
             }
+            processBuilder.directory(currentDirectory); // Set the working directory
+            process = processBuilder.start();
+
             try {
                 process.waitFor();
             } catch (InterruptedException e) {
@@ -89,6 +97,25 @@ public class Main {
 
         } catch (IOException e) {
             System.out.println("No such file or directory (os error 2)");
+        }
+    }
+
+    private static void handleCdCommand(String path) {
+        if (path.isEmpty()) {
+            path = System.getProperty("user.home");
+        }
+        File newDirectory;
+        if (path.equals("..")) {
+            newDirectory = currentDirectory.getParentFile();
+        } else {
+            newDirectory = new File(currentDirectory, path);
+        }
+
+        if (newDirectory != null && newDirectory.exists() && newDirectory.isDirectory()) {
+            currentDirectory = newDirectory;
+            System.out.println("Changed directory to: " + currentDirectory.getAbsolutePath());
+        } else {
+            System.out.println("cd: " + path + ": No such file or directory");
         }
     }
 
@@ -116,7 +143,8 @@ public class Main {
         if (unixArgs.contains("-d")) {
             windowsArgs.append("/A:D ");
         }
-        if (!windowsArgs.isEmpty()) {
+
+        if (windowsArgs.length() > 0) {
             windowsArgs.setLength(windowsArgs.length() - 1);
         }
 
