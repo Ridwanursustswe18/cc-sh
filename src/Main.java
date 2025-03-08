@@ -32,8 +32,8 @@ public class Main {
                     continue;
                 }
 
-                if (command.equals("exit")) {
-
+                if (command.equals("exit") ) {
+                    System.out.println("Exiting...");
                     break;
                 }
 
@@ -43,30 +43,43 @@ public class Main {
     }
 
     private static void executeCommand(String command, boolean isWindows) {
+        String[] commandParts = command.split("\\s+", 2);
+        String originalCommandName = commandParts[0];
+        String arguments = commandParts.length > 1 ? commandParts[1] : "";
+        String translatedCommand = originalCommandName;
+        String translatedArguments = arguments;
+
+        if (isWindows) {
+            if (UNIX_TO_WINDOWS_COMMANDS.containsKey(originalCommandName)) {
+                translatedCommand = UNIX_TO_WINDOWS_COMMANDS.get(originalCommandName);
+                if (originalCommandName.equals("ls")) {
+                    translatedArguments = translateLsArguments(arguments);
+                }
+            } else {
+                System.out.println("No such file or directory (os error 2)");
+                return;
+            }
+            command = translatedCommand + (translatedArguments.isEmpty() ? "" : " " + translatedArguments);
+        }
+
+        Process process;
         try {
-            String[] commandParts = command.split("\\s+", 2);
-            String commandName = commandParts[0];
             if (isWindows) {
-                if (UNIX_TO_WINDOWS_COMMANDS.containsKey(commandName)) {
-                    String windowsCommand = UNIX_TO_WINDOWS_COMMANDS.get(commandName);
-                    if (commandParts.length > 1) {
-                        command = windowsCommand + " " + commandParts[1];
-                    } else {
-                        command = windowsCommand;
-                    }
-                } else {
+                process = Runtime.getRuntime().exec("cmd.exe /c " + command);
+            } else {
+                try {
+                    process = Runtime.getRuntime().exec(new String[]{"/bin/sh", "-c", command});
+                } catch (IOException e) {
                     System.out.println("No such file or directory (os error 2)");
                     return;
                 }
             }
-
-            Process process;
-            if (isWindows) {
-                process = Runtime.getRuntime().exec("cmd.exe /c " + command);
-            } else {
-                process = Runtime.getRuntime().exec(new String[]{"/bin/sh", "-c", command});
+            try {
+                process.waitFor();
+            } catch (InterruptedException e) {
+                System.out.println("Command execution interrupted.");
+                return;
             }
-
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
@@ -75,7 +88,38 @@ public class Main {
             }
 
         } catch (IOException e) {
-            System.out.println(e.getMessage());
+            System.out.println("No such file or directory (os error 2)");
         }
+    }
+
+    private static String translateLsArguments(String unixArgs) {
+        StringBuilder windowsArgs = new StringBuilder();
+
+        if (unixArgs.contains("-a") || unixArgs.contains("-A")) {
+            windowsArgs.append("/A ");
+        }
+        if (unixArgs.contains("-l")) {
+            windowsArgs.append("/Q ");
+        }
+        if (unixArgs.contains("-t")) {
+            windowsArgs.append("/O-D ");
+        }
+        if (unixArgs.contains("-r")) {
+            windowsArgs.append("/O-N ");
+        }
+        if (unixArgs.contains("-R")) {
+            windowsArgs.append("/S ");
+        }
+        if (unixArgs.contains("-S")) {
+            windowsArgs.append("/O-S ");
+        }
+        if (unixArgs.contains("-d")) {
+            windowsArgs.append("/A:D ");
+        }
+        if (!windowsArgs.isEmpty()) {
+            windowsArgs.setLength(windowsArgs.length() - 1);
+        }
+
+        return windowsArgs.toString();
     }
 }
