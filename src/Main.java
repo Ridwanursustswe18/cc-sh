@@ -2,7 +2,9 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
 
@@ -14,6 +16,7 @@ public class Main {
         UNIX_TO_WINDOWS_COMMANDS.put("ls", "dir");
         UNIX_TO_WINDOWS_COMMANDS.put("pwd", "cd");
         UNIX_TO_WINDOWS_COMMANDS.put("cat", "type");
+        UNIX_TO_WINDOWS_COMMANDS.put("grep", "findstr");
     }
 
     public static void main(String[] args) {
@@ -34,7 +37,7 @@ public class Main {
                     continue;
                 }
 
-                if (command.equals("exit")) {
+                if (command.equals("exit") || command.equals("quit")) {
                     System.out.println("Exiting...");
                     break;
                 }
@@ -45,33 +48,86 @@ public class Main {
     }
 
     private static void executeCommand(String command, boolean isWindows) {
-        String[] commandParts = command.split("\\s+", 2);
-        String originalCommandName = commandParts[0];
-        String arguments = commandParts.length > 1 ? commandParts[1] : "";
-        if (originalCommandName.equals("cd")) {
-            handleCdCommand(arguments);
+        if (command.startsWith("cd ")) {
+            handleCdCommand(command.substring(2).trim());
+            return;
+        } else if (command.equals("cd")) {
+            handleCdCommand("");
             return;
         }
+        if (command.contains("|")) {
+            handlePipedCommand(command, isWindows);
+        } else {
+            handleSingleCommand(command, isWindows);
+        }
+    }
 
-        String translatedCommand = originalCommandName;
-        String translatedArguments = arguments;
+    private static void handlePipedCommand(String command, boolean isWindows) {
+        String[] pipeParts = command.split("\\|");
+        List<String> translatedCommands = new ArrayList<>();
 
-        if (isWindows) {
-            if (UNIX_TO_WINDOWS_COMMANDS.containsKey(originalCommandName)) {
-                translatedCommand = UNIX_TO_WINDOWS_COMMANDS.get(originalCommandName);
-                // Translate arguments for specific commands
-                if (originalCommandName.equals("ls")) {
-                    translatedArguments = translateLsArguments(arguments);
+        for (String part : pipeParts) {
+            String trimmedPart = part.trim();
+            String[] cmdParts = trimmedPart.split("\\s+", 2);
+            String originalCmd = cmdParts[0];
+            String args = cmdParts.length > 1 ? cmdParts[1] : "";
+            if (originalCmd.equals("wc")) {
+                if (isWindows) {
+                    translatedCommands.add(translateWcCommand(args));
+                } else {
+                    translatedCommands.add("wc " + args);
                 }
-                // Add other command argument translations here as needed
+            } else if (isWindows && UNIX_TO_WINDOWS_COMMANDS.containsKey(originalCmd)) {
+                String translatedCmd = UNIX_TO_WINDOWS_COMMANDS.get(originalCmd);
+                if (originalCmd.equals("ls")) {
+                    args = translateLsArguments(args);
+                }
+                translatedCommands.add(translatedCmd + (args.isEmpty() ? "" : " " + args));
             } else {
-                System.out.println("No such file or directory (os error 2)");
-                return;
+                translatedCommands.add(trimmedPart);
             }
-            command = translatedCommand + (translatedArguments.isEmpty() ? "" : " " + translatedArguments);
         }
 
-        Process process;
+        String translatedPipeline = String.join(" | ", translatedCommands);
+        executeShellCommand(translatedPipeline, isWindows);
+    }
+
+    private static void handleSingleCommand(String command, boolean isWindows) {
+        String[] cmdParts = command.split("\\s+", 2);
+        String originalCmd = cmdParts[0];
+        String args = cmdParts.length > 1 ? cmdParts[1] : "";
+        if (originalCmd.equals("wc")) {
+            if (isWindows) {
+                command = translateWcCommand(args);
+            } else {
+                command = "wc " + args;
+            }
+        } else if (isWindows && UNIX_TO_WINDOWS_COMMANDS.containsKey(originalCmd)) {
+            String translatedCmd = UNIX_TO_WINDOWS_COMMANDS.get(originalCmd);
+            if (originalCmd.equals("ls")) {
+                args = translateLsArguments(args);
+            }
+            command = translatedCmd + (args.isEmpty() ? "" : " " + args);
+        }
+
+        executeShellCommand(command, isWindows);
+    }
+
+    private static String translateWcCommand(String args) {
+        if (args.contains("-l")) {
+            return "find /c /v \"\""; 
+        } else if (args.contains("-c")) {
+            return "cmd /c for %f in (.) do @echo %~zf"; 
+        } else if (args.contains("-w")) {
+            return "cmd /c for /f %f in ('type') do @echo %f | find /c /v \"\""; 
+        } else if (args.contains("-m")) {
+            return "cmd /c for /f %f in ('type') do @echo %f | find /c /v \"\""; 
+        } else {
+            return "find /c /v \"\""; 
+        }
+    }
+
+    private static void executeShellCommand(String command, boolean isWindows) {
         try {
             ProcessBuilder processBuilder = new ProcessBuilder();
             if (isWindows) {
@@ -79,24 +135,30 @@ public class Main {
             } else {
                 processBuilder.command("/bin/sh", "-c", command);
             }
-            processBuilder.directory(currentDirectory); // Set the working directory
-            process = processBuilder.start();
+            processBuilder.directory(currentDirectory);
+            processBuilder.redirectErrorStream(true);
 
-            try {
-                process.waitFor();
-            } catch (InterruptedException e) {
-                System.out.println("Command execution interrupted.");
-                return;
-            }
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    System.out.println(line);
+            Process process = processBuilder.start();
+
+            Thread outputThread = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(process.getInputStream()))) {
+                    char[] buffer = new char[8192];
+                    int bytesRead;
+                    while ((bytesRead = reader.read(buffer)) != -1) {
+                        System.out.print(new String(buffer, 0, bytesRead));
+                    }
+                } catch (IOException e) {
+                    System.out.println("Error reading output: " + e.getMessage());
                 }
-            }
+            });
+            outputThread.start();
 
-        } catch (IOException e) {
-            System.out.println("No such file or directory (os error 2)");
+            process.waitFor();
+            outputThread.join();
+
+        } catch (IOException | InterruptedException e) {
+            System.out.println("Execution error: " + e.getMessage());
         }
     }
 
@@ -104,18 +166,19 @@ public class Main {
         if (path.isEmpty()) {
             path = System.getProperty("user.home");
         }
-        File newDirectory;
+
+        File newDir;
         if (path.equals("..")) {
-            newDirectory = currentDirectory.getParentFile();
+            newDir = currentDirectory.getParentFile();
         } else {
-            newDirectory = new File(currentDirectory, path);
+            newDir = new File(currentDirectory, path);
         }
 
-        if (newDirectory != null && newDirectory.exists() && newDirectory.isDirectory()) {
-            currentDirectory = newDirectory;
+        if (newDir != null && newDir.exists() && newDir.isDirectory()) {
+            currentDirectory = newDir;
             System.out.println("Changed directory to: " + currentDirectory.getAbsolutePath());
         } else {
-            System.out.println("cd: " + path + ": No such file or directory");
+            System.out.println("cd: " + path + ": No such directory");
         }
     }
 
@@ -144,7 +207,7 @@ public class Main {
             windowsArgs.append("/A:D ");
         }
 
-        if (windowsArgs.length() > 0) {
+        if (!windowsArgs.isEmpty()) {
             windowsArgs.setLength(windowsArgs.length() - 1);
         }
 
