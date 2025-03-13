@@ -20,30 +20,26 @@ public class Main {
     }
 
     public static void main(String[] args) {
-        if (args.length != 1) {
-            System.out.println("Usage: java Main <prompt-name>");
-            return;
-        }
 
-        String promptName = args[0];
+        SignalHandler signalHandler = new SignalHandler();
+        signalHandler.setupSignalHandler();
         boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
 
-        try (Scanner scanner = new Scanner(System.in)) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
             while (true) {
-                System.out.print(promptName + "> ");
-                String command = scanner.nextLine().trim();
-
-                if (command.isEmpty()) {
+                System.out.print("ccsh> ");
+                String command = reader.readLine();
+                if (command == null || command.trim().isEmpty()) {
                     continue;
                 }
-
                 if (command.equals("exit") || command.equals("quit")) {
                     System.out.println("Exiting...");
                     break;
                 }
-
-                executeCommand(command, isWindows);
+                executeCommand(command.trim(), isWindows);
             }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
@@ -115,15 +111,15 @@ public class Main {
 
     private static String translateWcCommand(String args) {
         if (args.contains("-l")) {
-            return "find /c /v \"\""; 
+            return "find /c /v \"\"";
         } else if (args.contains("-c")) {
-            return "cmd /c for %f in (.) do @echo %~zf"; 
+            return "cmd /c for %f in (.) do @echo %~zf";
         } else if (args.contains("-w")) {
-            return "cmd /c for /f %f in ('type') do @echo %f | find /c /v \"\""; 
+            return "cmd /c for /f %f in ('type') do @echo %f | find /c /v \"\"";
         } else if (args.contains("-m")) {
-            return "cmd /c for /f %f in ('type') do @echo %f | find /c /v \"\""; 
+            return "cmd /c for /f %f in ('type') do @echo %f | find /c /v \"\"";
         } else {
-            return "find /c /v \"\""; 
+            return "find /c /v \"\"";
         }
     }
 
@@ -213,4 +209,13 @@ public class Main {
 
         return windowsArgs.toString();
     }
+    private static class SignalHandler {
+        public void setupSignalHandler() {
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                System.out.println("\nReceived interrupt signal (SIGINT) - shell will not exit.");
+
+            }));
+        }
+    }
+
 }
