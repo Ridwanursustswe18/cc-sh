@@ -1,7 +1,4 @@
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -20,7 +17,6 @@ public class Main {
     }
 
     public static void main(String[] args) {
-
         SignalHandler signalHandler = new SignalHandler();
         signalHandler.setupSignalHandler();
         boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
@@ -29,13 +25,16 @@ public class Main {
             while (true) {
                 System.out.print("ccsh> ");
                 String command = reader.readLine();
+
                 if (command == null || command.trim().isEmpty()) {
                     continue;
                 }
+
                 if (command.equals("exit") || command.equals("quit")) {
                     System.out.println("Exiting...");
                     break;
                 }
+                saveCommandToHistory(command);
                 executeCommand(command.trim(), isWindows);
             }
         } catch (Exception e) {
@@ -43,7 +42,31 @@ public class Main {
         }
     }
 
+    private static void saveCommandToHistory(String command) {
+        try {
+            String fileName = "ccsh_history.txt";
+            File historyFile = new File(currentDirectory, fileName);
+            if (!historyFile.exists()) {
+                historyFile.createNewFile();
+            }
+            try (FileWriter fw = new FileWriter(historyFile, true);
+                 BufferedWriter bw = new BufferedWriter(fw);
+                 PrintWriter out = new PrintWriter(bw)) {
+                out.println(command);
+            }
+        } catch (IOException e) {
+            System.err.println("Error writing to history file: " + e.getMessage());
+        }
+    }
     private static void executeCommand(String command, boolean isWindows) {
+        if (command.equals("history")) {
+            if(!isWindows){
+                executeShellCommand(command, false);
+            }else {
+                displayCommandHistory();
+            }
+            return;
+        }
         if (command.startsWith("cd ")) {
             handleCdCommand(command.substring(2).trim());
             return;
@@ -217,5 +240,24 @@ public class Main {
             }));
         }
     }
+    private static void displayCommandHistory() {
+        try {
+            String fileName = "ccsh_history.txt";
+            File historyFile = new File(currentDirectory, fileName);
 
+            if (!historyFile.exists()) {
+                System.out.println("No command history found.");
+                return;
+            }
+
+            try (BufferedReader reader = new BufferedReader(new FileReader(historyFile))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    System.out.printf("%s\n", line);
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error reading history file: " + e.getMessage());
+        }
+    }
 }
