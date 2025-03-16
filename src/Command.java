@@ -11,30 +11,17 @@ public class Command {
         UNIX_TO_WINDOWS_COMMANDS.put("pwd", "cd");
         UNIX_TO_WINDOWS_COMMANDS.put("cat", "type");
         UNIX_TO_WINDOWS_COMMANDS.put("grep", "findstr");
+        UNIX_TO_WINDOWS_COMMANDS.put("mkdir", "md");
+        History.loadCommandHistory();
+        Runtime.getRuntime().addShutdownHook(new Thread(History::saveCommandHistory));
     }
     private static File currentDirectory = new File(System.getProperty("user.dir"));
-    public static void saveCommandToHistory(String command) {
-        try {
-            String fileName = "ccsh_history.txt";
-            File historyFile = new File(currentDirectory, fileName);
-            if (!historyFile.exists()) {
-                historyFile.createNewFile();
-            }
-            try (FileWriter fw = new FileWriter(historyFile, true);
-                 BufferedWriter bw = new BufferedWriter(fw);
-                 PrintWriter out = new PrintWriter(bw)) {
-                out.println(command);
-            }
-        } catch (IOException e) {
-            System.err.println("Error writing to history file: " + e.getMessage());
-        }
-    }
     public static void executeCommand(String command, boolean isWindows) {
         if (command.equals("history")) {
             if(!isWindows){
                 executeShellCommand(command, false);
             }else {
-                displayCommandHistory();
+                History.commandHistory.forEach(System.out::println);
             }
             return;
         }
@@ -43,6 +30,16 @@ public class Command {
             return;
         } else if (command.equals("cd")) {
             handleCdCommand("");
+            return;
+        }
+        if(command.startsWith("bash ")){
+            String filePath = currentDirectory.getAbsolutePath() + File.separator + command.substring(5).trim();
+            File scriptFile = new File(filePath);
+            if(scriptFile.exists() && scriptFile.isFile()) {
+                processBashFile(scriptFile);
+            } else {
+                System.err.println("Error: Bash script file not found: " + filePath);
+            }
             return;
         }
         if (command.contains("|")) {
@@ -156,25 +153,27 @@ public class Command {
             System.out.println("cd: " + path + ": No such directory");
         }
     }
-    private static void displayCommandHistory() {
-        try {
-            String fileName = "ccsh_history.txt";
-            File historyFile = new File(currentDirectory, fileName);
 
-            if (!historyFile.exists()) {
-                System.out.println("No command history found.");
-                return;
-            }
+    private static void processBashFile(File file) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
 
-            try (BufferedReader reader = new BufferedReader(new FileReader(historyFile))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    System.out.printf("%s\n", line);
+                boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+                if(line.contains("|")){
+                    handlePipedCommand(line, isWindows);
+                } else if (line.contains("cd")) {
+                    String[] parts = line.split("\\s",2);
+                    handleCdCommand(parts[1]);
+                } else {
+                    handleSingleCommand(line, isWindows);
                 }
             }
         } catch (IOException e) {
-            System.err.println("Error reading history file: " + e.getMessage());
+            System.err.println("Error processing bash script: " + e.getMessage());
         }
-    }
-
-}
+    }}

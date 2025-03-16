@@ -20,7 +20,7 @@ public class Main {
                     System.out.println("Exiting...");
                     break;
                 }
-                Command.saveCommandToHistory(command);
+                History.saveCommandToHistory(command);
                 Command.executeCommand(command.trim(), isWindows);
             }
         } catch (Exception e) {
@@ -31,7 +31,6 @@ public class Main {
     private static class SignalHandler {
         public void setupSignalHandler() {
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                System.out.println("\nReceived interrupt signal (SIGINT) - shell will not exit.");
 
             }));
         }
