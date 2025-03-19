@@ -1,4 +1,4 @@
 
 public interface CommandExecutor {
-    void execute(String command);
+    String execute(String command);
 }

@@ -20,4 +20,9 @@ public class UnixCommandExecutor extends BaseCommandExecutor {
     protected void handleSingleCommand(String command) {
         processRunner.runProcess(command, false);
     }
+
+    @Override
+    protected void handleOutputRedirectionCommand(String command) {
+        processRunner.runProcess(command, false);
+    }
 }

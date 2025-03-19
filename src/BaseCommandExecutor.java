@@ -19,36 +19,37 @@ public abstract class BaseCommandExecutor implements CommandExecutor {
 
 
     @Override
-    public void execute(String command) {
+    public String execute(String command) {
         historyManager.addCommand(command);
 
         if (command.equals("history")) {
             handleHistoryCommand();
-            return;
+            return command;
         }
 
         if (command.startsWith("cd ") || command.equals("cd")) {
             handleCdCommand(command);
-            return;
+            return command;
         }
 
         if (command.startsWith("bash ")) {
             handleBashCommand(command);
-            return;
+            return command;
         }
 
         if (command.contains("|")) {
             handlePipedCommand(command);
-            return;
+            return command;
         }
             handleSingleCommand(command);
 
+        return command;
     }
 
     protected abstract void handleHistoryCommand();
     protected abstract void handlePipedCommand(String command);
     protected abstract void handleSingleCommand(String command);
-
+    protected abstract void handleOutputRedirectionCommand(String command);
     protected void handleCdCommand(String command) {
         String path = command.equals("cd") ? "" : command.substring(3).trim();
         directoryManager.changeDirectory(path);
